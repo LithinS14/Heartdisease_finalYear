@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/auth.css';
 
-function Login() {
+function Login({ onLoginSuccess }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -33,6 +33,11 @@ function Login() {
         // Store token in localStorage
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
+        
+        // Call the onLoginSuccess callback to update App state
+        if (onLoginSuccess) {
+          onLoginSuccess(response.data.user, response.data.token);
+        }
         
         // Redirect to dashboard
         navigate('/dashboard');

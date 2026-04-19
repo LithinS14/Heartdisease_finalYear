@@ -19,7 +19,17 @@ return (
 );
 }
 
-const hasHeartDisease = prediction.includes("Heart Disease Detected");
+// Handle both old string format and new object format
+const hasHeartDisease = typeof prediction === 'string' 
+  ? prediction.includes("Heart Disease Detected")
+  : prediction.prediction === 1;
+
+const resultMessage = typeof prediction === 'string'
+  ? prediction
+  : prediction.message || (prediction.prediction === 1 ? 'Heart Disease Detected' : 'No Heart Disease Detected');
+
+const confidence = typeof prediction === 'object' ? prediction.confidence : null;
+const riskLevel = typeof prediction === 'object' ? prediction.riskLevel : null;
 
 return (
 <div className="result-content">
@@ -27,7 +37,13 @@ return (
     <span className={`prediction-icon ${hasHeartDisease ? 'warning' : 'success'}`}>
         {hasHeartDisease ? '⚠️' : '✅'}
     </span>
-    <p className="prediction-text">{prediction}</p>
+    <p className="prediction-text">{resultMessage}</p>
+    {confidence && (
+        <div style={{ marginTop: '10px', fontSize: '14px', opacity: 0.8 }}>
+        <p>Confidence: {confidence.toFixed(1)}%</p>
+        {riskLevel && <p>Risk Level: <strong>{riskLevel}</strong></p>}
+        </div>
+    )}
     </div>
 
     {hasHeartDisease ? (

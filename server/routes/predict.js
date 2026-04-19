@@ -57,22 +57,63 @@ router.post("/", async (req, res) => {
             return res.json(predictionCache.get(cacheKey));
         }
 
+        // Validate all input values are present
+        if (inputValues.some(val => val === undefined || val === null || val === '')) {
+            return res.status(400).json({
+                success: false,
+                error: "All health parameters are required"
+            });
+        }
+
         // Convert all arguments to strings
         const stringArgs = inputValues.map(arg => arg.toString());
         
-        // Spawn Python process
-        const pythonProcess = spawn('python', ['ml/ml_predict.py', ...stringArgs]);
+        // Get absolute path to the Python script
+        const pythonScriptPath = require('path').join(__dirname, '../ml/ml_predict.py');
+        
+        console.log('[v0] Python script path:', pythonScriptPath);
+        console.log('[v0] Input values:', inputValues);
+        console.log('[v0] String args:', stringArgs);
+        
+        // Try python3 first, then python as fallback
+        let pythonProcess;
+        try {
+            pythonProcess = spawn('python3', [pythonScriptPath, ...stringArgs], {
+                timeout: 30000
+            });
+        } catch (e) {
+            console.log('[v0] python3 failed, trying python');
+            pythonProcess = spawn('python', [pythonScriptPath, ...stringArgs], {
+                timeout: 30000
+            });
+        }
         
         let result = '';
         let errorOutput = '';
+        let responseAlreadySent = false;
+
+        // Handle process spawn errors
+        pythonProcess.on('error', (err) => {
+            console.error('[v0] Failed to spawn Python process:', err);
+            if (!responseAlreadySent) {
+                responseAlreadySent = true;
+                return res.status(500).json({
+                    success: false,
+                    error: `Failed to start Python: ${err.message}. Make sure Python 3 is installed.`
+                });
+            }
+        });
 
         // Set timeout for Python process (30 seconds max)
         const timeout = setTimeout(() => {
             pythonProcess.kill();
-            return res.status(500).json({ 
-                success: false,
-                error: "Prediction took too long. Please try again." 
-            });
+            if (!responseAlreadySent) {
+                responseAlreadySent = true;
+                return res.status(500).json({ 
+                    success: false,
+                    error: "Prediction took too long. Please try again." 
+                });
+            }
         }, 30000);
 
         pythonProcess.stdout.on('data', (data) => {
@@ -81,23 +122,36 @@ router.post("/", async (req, res) => {
 
         pythonProcess.stderr.on('data', (data) => {
             errorOutput += data.toString();
+            console.log('[v0] Python stderr:', data.toString());
         });
 
         pythonProcess.on('close', async (code) => {
             clearTimeout(timeout);
 
+            if (responseAlreadySent) {
+                console.log('[v0] Response already sent, skipping close handler');
+                return;
+            }
+
+            console.log('[v0] Python process closed with code:', code);
+            console.log('[v0] Python stdout:', result);
+            console.log('[v0] Python stderr:', errorOutput);
+
             if (code !== 0) {
-                console.error(`Python script exited with code ${code}`);
-                console.error(`Error output: ${errorOutput}`);
+                console.error(`[v0] Python script exited with code ${code}`);
+                console.error(`[v0] Error output: ${errorOutput}`);
+                responseAlreadySent = true;
                 return res.status(500).json({ 
                     success: false,
-                    error: "Prediction failed." 
+                    error: `Python process failed: ${errorOutput || 'Unknown error'}` 
                 });
             }
             
             try {
                 // Parse prediction result
                 const predictionText = result.trim();
+                console.log('[v0] Prediction text to parse:', predictionText);
+                
                 let prediction = 0;
                 let confidence = 0;
                 let riskLevel = 'Low';
@@ -106,6 +160,9 @@ router.post("/", async (req, res) => {
                 if (predictionText.includes('Prediction:')) {
                     const predMatch = predictionText.match(/Prediction:\s*(\d+)/);
                     const confMatch = predictionText.match(/Confidence:\s*([\d.]+)%?/);
+                    
+                    console.log('[v0] Pred match:', predMatch);
+                    console.log('[v0] Conf match:', confMatch);
                     
                     prediction = predMatch ? parseInt(predMatch[1]) : 0;
                     confidence = confMatch ? parseFloat(confMatch[1]) : 0;
@@ -126,6 +183,8 @@ router.post("/", async (req, res) => {
                         : 'No heart disease detected. Stay healthy!'
                 };
 
+                console.log('[v0] Response data:', responseData);
+
                 // Cache the result
                 predictionCache.set(cacheKey, responseData);
 
@@ -137,30 +196,36 @@ router.post("/", async (req, res) => {
 
                 // If user is authenticated, save to database
                 if (userId) {
-                    await Reading.create({
-                        userId,
-                        age: inputData.age,
-                        sex: inputData.sex,
-                        cp: inputData.cp,
-                        trestbps: inputData.trestbps,
-                        chol: inputData.chol,
-                        fbs: inputData.fbs,
-                        restecg: inputData.restecg,
-                        thalach: inputData.thalach,
-                        exang: inputData.exang,
-                        oldpeak: inputData.oldpeak,
-                        slope: inputData.slope,
-                        ca: inputData.ca,
-                        thal: inputData.thal,
-                        prediction,
-                        confidence,
-                        riskLevel
-                    });
+                    try {
+                        await Reading.create({
+                            userId,
+                            age: inputData.age,
+                            sex: inputData.sex,
+                            cp: inputData.cp,
+                            trestbps: inputData.trestbps,
+                            chol: inputData.chol,
+                            fbs: inputData.fbs,
+                            restecg: inputData.restecg,
+                            thalach: inputData.thalach,
+                            exang: inputData.exang,
+                            oldpeak: inputData.oldpeak,
+                            slope: inputData.slope,
+                            ca: inputData.ca,
+                            thal: inputData.thal,
+                            prediction,
+                            confidence,
+                            riskLevel
+                        });
+                    } catch (dbError) {
+                        console.error('[v0] Error saving to database:', dbError);
+                        // Don't fail the response due to DB error
+                    }
                 }
 
+                responseAlreadySent = true;
                 res.json(responseData);
             } catch (error) {
-                console.error('[Predict Error]', error);
+                console.error('[v0] Predict Error:', error);
                 res.status(500).json({ 
                     success: false,
                     error: "Error processing prediction" 

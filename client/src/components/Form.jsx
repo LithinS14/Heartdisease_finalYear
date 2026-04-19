@@ -33,11 +33,26 @@ setPrediction(null);
 setError(null);
 
 try {
-    const response = await axios.post('http://localhost:5000/predict', formData);
-    setPrediction(response.data.prediction);
+    const token = localStorage.getItem('token');
+    const headers = {};
+    
+    // Add token to headers if available
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await axios.post('http://localhost:5000/api/predict', formData, { headers });
+    
+    if (response.data.success) {
+        setPrediction(response.data);
+    } else {
+        setError(response.data.message || 'Prediction failed. Please try again.');
+    }
 } catch (error) {
-    console.error('Error in prediction:', error);
-    setError('Failed to process your data. Please try again.');
+    console.error('[v0] Error in prediction:', error);
+    console.error('[v0] Error response:', error.response?.data);
+    const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to process your data. Please try again.';
+    setError(errorMessage);
 } finally {
     setLoading(false);
 }
