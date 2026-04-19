@@ -21,13 +21,23 @@ def main():
         model_path = os.path.join(script_dir, "heart_disease_model.keras")
         scaler_path = os.path.join(script_dir, "scaler.pkl")
         
+        # Debug: Print paths
+        sys.stderr.write(f"Script dir: {script_dir}\n")
+        sys.stderr.write(f"Model path: {model_path}\n")
+        sys.stderr.write(f"Scaler path: {scaler_path}\n")
+        sys.stderr.write(f"Model exists: {os.path.exists(model_path)}\n")
+        sys.stderr.write(f"Scaler exists: {os.path.exists(scaler_path)}\n")
+        sys.stderr.flush()
+        
         # Check if files exist
         if not os.path.exists(model_path):
-            print(f"Error: Model file not found at {model_path}", file=sys.stderr)
+            sys.stderr.write(f"Error: Model file not found at {model_path}\n")
+            sys.stderr.flush()
             return 1
         
         if not os.path.exists(scaler_path):
-            print(f"Error: Scaler file not found at {scaler_path}", file=sys.stderr)
+            sys.stderr.write(f"Error: Scaler file not found at {scaler_path}\n")
+            sys.stderr.flush()
             return 1
         
         # Load trained model and scaler

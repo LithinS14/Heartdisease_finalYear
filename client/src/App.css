@@ -147,6 +147,141 @@ input:focus, select:focus {
   box-shadow: 0 0 0 2px rgba(69, 123, 157, 0.2);
 }
 
+.ocr-upload-section {
+  background: linear-gradient(135deg, rgba(69, 123, 157, 0.05) 0%, rgba(230, 57, 70, 0.05) 100%);
+  border: 2px dashed var(--secondary-color);
+  padding: 25px;
+  border-radius: var(--border-radius);
+  margin-bottom: 30px;
+}
+
+.ocr-header {
+  margin-bottom: 20px;
+}
+
+.ocr-header h3 {
+  color: var(--dark-color);
+  font-size: 1.1rem;
+  margin-bottom: 5px;
+}
+
+.ocr-header p {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.ocr-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ocr-file-label {
+  display: block;
+  cursor: pointer;
+  border-radius: var(--border-radius);
+  background: white;
+  transition: var(--transition);
+}
+
+.ocr-file-label:hover {
+  background: #f9f9f9;
+}
+
+.ocr-upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px 20px;
+  text-align: center;
+  color: #666;
+}
+
+.ocr-upload-icon {
+  font-size: 2.5rem;
+}
+
+.ocr-upload-placeholder small {
+  color: #999;
+  font-size: 0.85rem;
+}
+
+.ocr-file-preview {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+}
+
+.ocr-preview-img {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: var(--border-radius);
+  border: 1px solid #ddd;
+}
+
+.ocr-file-name {
+  color: var(--dark-color);
+  font-weight: 500;
+  flex: 1;
+}
+
+.ocr-pdf-icon {
+  font-size: 2.5rem;
+  flex-shrink: 0;
+}
+
+.ocr-file-size {
+  color: #999;
+  font-size: 0.85rem;
+  display: block;
+}
+
+.ocr-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.ocr-extract-btn,
+.ocr-cancel-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: var(--transition);
+}
+
+.ocr-extract-btn {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.ocr-extract-btn:hover:not(:disabled) {
+  background-color: #3a6a8a;
+  transform: translateY(-2px);
+}
+
+.ocr-cancel-btn {
+  background-color: #e8e8e8;
+  color: #666;
+}
+
+.ocr-cancel-btn:hover:not(:disabled) {
+  background-color: #ddd;
+}
+
+.ocr-extract-btn:disabled,
+.ocr-cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .submit-button {
   background-color: var(--primary-color);
   color: white;
@@ -209,10 +344,11 @@ input:focus, select:focus {
 
 .prediction-box {
   display: flex;
-  align-items: center;
-  padding: 15px;
+  flex-direction: column;
+  gap: 20px;
+  padding: 25px;
   border-radius: var(--border-radius);
-  margin-bottom: 20px;
+  margin-bottom: 30px;
 }
 
 .disease {
@@ -225,13 +361,63 @@ input:focus, select:focus {
   border-left: 4px solid var(--success-color);
 }
 
+.prediction-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+}
+
 .prediction-icon {
-  font-size: 1.5rem;
-  margin-right: 10px;
+  font-size: 2rem;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .prediction-text {
   font-weight: 600;
+  font-size: 1.1rem;
+  line-height: 1.5;
+  color: var(--dark-color);
+}
+
+.prediction-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  padding-top: 15px;
+}
+
+.metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.95rem;
+}
+
+.metric-label {
+  color: #666;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-weight: 600;
+  color: var(--dark-color);
+}
+
+.risk-high {
+  color: var(--warning-color);
+  font-weight: 700;
+}
+
+.risk-medium {
+  color: #f59e0b;
+  font-weight: 700;
+}
+
+.risk-low {
+  color: var(--success-color);
+  font-weight: 700;
 }
 
 .recommendations h3 {

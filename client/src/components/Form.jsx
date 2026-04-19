@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import Tesseract from 'tesseract.js';
+import * as pdfjsLib from 'pdfjs-dist';
 
 function Form({ setPrediction, setLoading, setError }) {
 const [formData, setFormData] = useState({
@@ -18,12 +20,294 @@ ca: 0,
 thal: 1
 });
 
+const [ocrFile, setOcrFile] = useState(null);
+const [ocrProcessing, setOcrProcessing] = useState(false);
+const [ocrPreview, setOcrPreview] = useState(null);
+
 const handleChange = (e) => {
 const { name, value } = e.target;
 setFormData({
     ...formData,
     [name]: name === 'oldpeak' ? parseFloat(value) : parseInt(value)
 });
+};
+
+const handleOCRFileSelect = (e) => {
+const selectedFile = e.target.files[0];
+if (selectedFile) {
+    // Validate file type
+    const validImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    const validPdfType = 'application/pdf';
+    
+    if (!validImageTypes.includes(selectedFile.type) && selectedFile.type !== validPdfType) {
+        setError('Please upload a valid image (PNG, JPG, GIF, WebP) or PDF file');
+        return;
+    }
+    
+    setOcrFile(selectedFile);
+    setError(null);
+    
+    // Create preview - only for images, PDFs will show file name
+    if (validImageTypes.includes(selectedFile.type)) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            setOcrPreview(event.target.result);
+        };
+        reader.readAsDataURL(selectedFile);
+    } else {
+        // For PDF, just show file name (no preview)
+        setOcrPreview(null);
+    }
+}
+};
+
+const handleProcessOCR = async () => {
+if (!ocrFile) {
+    setError('Please select a file first');
+    return;
+}
+
+setOcrProcessing(true);
+setError(null);
+
+try {
+    // Check if file is PDF or image
+    const isPDF = ocrFile.type === 'application/pdf';
+    
+    if (isPDF) {
+        // For PDF files, use server-side OCR
+        await handlePDFProcessing();
+    } else {
+        // For image files, use Tesseract.js
+        await handleImageProcessing();
+    }
+    
+    // Clear OCR section after extraction
+    setOcrFile(null);
+    setOcrPreview(null);
+    
+} catch (err) {
+    console.error('[v0] OCR error:', err);
+    setError('OCR processing failed: ' + (err.message || 'Unknown error. Please try again.'));
+} finally {
+    setOcrProcessing(false);
+}
+};
+
+const handleImageProcessing = async () => {
+return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = async (event) => {
+    try {
+        const imageData = event.target.result;
+        console.log('[v0] Processing image with Tesseract...');
+        
+        // Process with Tesseract
+        const result = await Tesseract.recognize(
+        imageData,
+        'eng',
+        { 
+            logger: m => {
+            console.log('[Tesseract]', m.status, Math.round(m.progress * 100) + '%');
+            }
+        }
+        );
+
+        const extractedText = result.data.text;
+        console.log('[v0] Image OCR completed. Extracted text length:', extractedText.length);
+        console.log('[v0] Extracted text preview:', extractedText.substring(0, 200));
+        
+        // Parse the extracted text to fill form fields
+        parseAndFillForm(extractedText);
+        resolve();
+        
+    } catch (err) {
+        reject(new Error('Image OCR processing failed: ' + (err.message || 'Unknown error')));
+    }
+    };
+    
+    reader.onerror = () => {
+    reject(new Error('Failed to read image file'));
+    };
+    
+    reader.readAsDataURL(ocrFile);
+});
+};
+
+const handlePDFProcessing = async () => {
+console.log('[v0] Processing PDF file...');
+
+try {
+    // Set worker for pdf.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    
+    const fileReader = new FileReader();
+    
+    fileReader.onload = async (event) => {
+        try {
+            const pdfData = event.target.result;
+            console.log('[v0] PDF file loaded, extracting text...');
+            
+            const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+            let extractedText = '';
+            
+            console.log('[v0] PDF has', pdf.numPages, 'pages');
+            
+            // Extract text from all pages
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                extractedText += pageText + '\n';
+                console.log('[v0] Extracted page', pageNum);
+            }
+            
+            console.log('[v0] PDF text extraction complete. Total text length:', extractedText.length);
+            console.log('[v0] Text preview:', extractedText.substring(0, 300));
+            
+            // Parse extracted text and fill form
+            parseAndFillForm(extractedText);
+            
+        } catch (err) {
+            throw new Error('Failed to extract text from PDF: ' + (err.message || 'Unknown error'));
+        }
+    };
+    
+    fileReader.onerror = () => {
+        throw new Error('Failed to read PDF file');
+    };
+    
+    fileReader.readAsArrayBuffer(ocrFile);
+    
+} catch (err) {
+    console.error('[v0] PDF processing error:', err);
+    throw err;
+}
+};
+
+const parseAndFillForm = (text) => {
+console.log('[v0] parseAndFillForm called with text length:', text.length);
+console.log('[v0] Text preview:', text.substring(0, 500));
+
+const updates = {};
+
+// Strategy 1: Try to match table format (Parameter | Value)
+const tablePatterns = {
+    age: {
+        name: 'Age',
+        regex: /Age\s+(\d+)\s*years/i,
+        convert: (val) => parseInt(val)
+    },
+    sex: {
+        name: 'Sex',
+        regex: /Sex\s+(Male|Female)/i,
+        convert: (val) => val.toLowerCase() === 'female' ? 0 : 1
+    },
+    cp: {
+        name: 'CP',
+        regex: /CP\s+(Typical\s+Angina|Atypical|Non-anginal|Asymptomatic)/i,
+        convert: (val) => {
+            if (val.match(/typical/i)) return 0;
+            if (val.match(/atypical/i)) return 1;
+            if (val.match(/non-anginal/i)) return 2;
+            if (val.match(/asymptomatic/i)) return 3;
+            return parseInt(val);
+        }
+    },
+    trestbps: {
+        name: 'Blood Pressure',
+        regex: /Blood\s+Pressure\s+(\d+)\s*mm/i,
+        convert: (val) => parseInt(val)
+    },
+    chol: {
+        name: 'Cholesterol',
+        regex: /Cholesterol\s+(\d+)\s*mg/i,
+        convert: (val) => parseInt(val)
+    },
+    fbs: {
+        name: 'FBS',
+        regex: /FBS\s+([><=]*\d+)\s*mg/i,
+        convert: (val) => val.includes('>') || parseInt(val) > 120 ? 1 : 0
+    },
+    restecg: {
+        name: 'Restecg',
+        regex: /Restecg\s+(ST-T\s+abnormality|Normal|LV\s+Hypertrophy)/i,
+        convert: (val) => {
+            if (val.match(/st-t|abnormality/i)) return 1;
+            if (val.match(/lv|hypertrophy/i)) return 2;
+            return 0;
+        }
+    },
+    thalach: {
+        name: 'Thalach',
+        regex: /Thalach\s+(\d+)\s*bpm/i,
+        convert: (val) => parseInt(val)
+    },
+    exang: {
+        name: 'Exang',
+        regex: /Exang\s+(Yes|No)/i,
+        convert: (val) => val.toLowerCase() === 'yes' ? 1 : 0
+    },
+    oldpeak: {
+        name: 'Oldpeak',
+        regex: /Oldpeak\s+([\d.]+)\s*mm/i,
+        convert: (val) => parseFloat(val)
+    },
+    slope: {
+        name: 'Slope',
+        regex: /Slope\s+(Upsloping|Flat|Downsloping)/i,
+        convert: (val) => {
+            if (val.match(/upsloping/i)) return 0;
+            if (val.match(/flat/i)) return 1;
+            if (val.match(/downsloping/i)) return 2;
+            return parseInt(val);
+        }
+    },
+    ca: {
+        name: 'CA',
+        regex: /CA\s+(\d+)\s*vessels/i,
+        convert: (val) => parseInt(val)
+    },
+    thal: {
+        name: 'Thal',
+        regex: /Thal\s+(Normal|Fixed\s+defect|Reversible\s+defect)/i,
+        convert: (val) => {
+            if (val.match(/normal/i)) return 0;
+            if (val.match(/fixed/i)) return 1;
+            if (val.match(/reversible/i)) return 2;
+            return parseInt(val);
+        }
+    }
+};
+
+// Try table format matching
+Object.keys(tablePatterns).forEach(key => {
+    const pattern = tablePatterns[key];
+    const match = text.match(pattern.regex);
+    if (match) {
+        try {
+            const value = match[1];
+            console.log(`[v0] Found ${key}: "${value}"`);
+            updates[key] = pattern.convert(value);
+            console.log(`[v0] Converted ${key} to: ${updates[key]}`);
+        } catch (err) {
+            console.error(`[v0] Error converting ${key}:`, err);
+        }
+    }
+});
+
+console.log('[v0] Extracted fields:', Object.keys(updates).length);
+console.log('[v0] Extracted values:', updates);
+
+if (Object.keys(updates).length > 0) {
+    setFormData(prev => ({ ...prev, ...updates }));
+    console.log(`[v0] Successfully extracted ${Object.keys(updates).length} fields from OCR`);
+    setError(null);
+} else {
+    console.error('[v0] No fields matched. Text content:', text);
+    setError('Could not extract health data from the report. Please ensure the PDF contains a readable medical report with the required parameters.');
+}
 };
 
 const handleSubmit = async (e) => {
@@ -80,6 +364,71 @@ return descriptions[field] || '';
 
 return (
 <form className="heart-form" onSubmit={handleSubmit}>
+    <div className="ocr-upload-section">
+    <div className="ocr-header">
+        <h3>Extract Data from Report</h3>
+        <p>Upload a medical report or image to auto-fill the form</p>
+    </div>
+    
+    <div className="ocr-input-wrapper">
+        <input
+        type="file"
+        id="ocr-file-input"
+        onChange={handleOCRFileSelect}
+        accept="image/*,.pdf"
+        style={{ display: 'none' }}
+        />
+        <label htmlFor="ocr-file-input" className="ocr-file-label">
+        {ocrFile ? (
+            <div className="ocr-file-preview">
+            {ocrPreview ? (
+                <>
+                <img src={ocrPreview} alt="preview" className="ocr-preview-img" />
+                <span className="ocr-file-name">{ocrFile.name}</span>
+                </>
+            ) : (
+                <>
+                <span className="ocr-pdf-icon">📋</span>
+                <span className="ocr-file-name">{ocrFile.name}</span>
+                <small className="ocr-file-size">{(ocrFile.size / 1024).toFixed(1)} KB</small>
+                </>
+            )}
+            </div>
+        ) : (
+            <div className="ocr-upload-placeholder">
+            <span className="ocr-upload-icon">📄</span>
+            <span>Click to upload report or drag and drop</span>
+            <small>PNG, JPG, GIF or PDF</small>
+            </div>
+        )}
+        </label>
+        
+        {ocrFile && (
+        <div className="ocr-actions">
+            <button
+            type="button"
+            className="ocr-extract-btn"
+            onClick={handleProcessOCR}
+            disabled={ocrProcessing}
+            >
+            {ocrProcessing ? 'Extracting...' : 'Extract Data'}
+            </button>
+            <button
+            type="button"
+            className="ocr-cancel-btn"
+            onClick={() => {
+                setOcrFile(null);
+                setOcrPreview(null);
+            }}
+            disabled={ocrProcessing}
+            >
+            Cancel
+            </button>
+        </div>
+        )}
+    </div>
+    </div>
+
     <div className="form-grid">
     <div className="form-group">
         <label htmlFor="age">

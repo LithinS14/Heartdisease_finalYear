@@ -6,7 +6,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
-import OCR from './pages/OCR';
+
 import History from './pages/History';
 import './App.css';
 
@@ -80,10 +80,7 @@ function App() {
             path="/profile" 
             element={isAuthenticated ? <Profile user={user} onLogout={handleLogout} /> : <Navigate to="/login" />} 
           />
-          <Route 
-            path="/ocr" 
-            element={isAuthenticated ? <OCR user={user} /> : <Navigate to="/login" />} 
-          />
+
           <Route 
             path="/history" 
             element={isAuthenticated ? <History user={user} /> : <Navigate to="/login" />} 

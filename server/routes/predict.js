@@ -68,23 +68,41 @@ router.post("/", async (req, res) => {
         // Convert all arguments to strings
         const stringArgs = inputValues.map(arg => arg.toString());
         
-        // Get absolute path to the Python script
-        const pythonScriptPath = require('path').join(__dirname, '../ml/ml_predict.py');
+        // Get absolute path to the Python script using process.cwd()
+        const path = require('path');
+        const pythonScriptPath = path.resolve(__dirname, '../ml/ml_predict.py');
+        const pythonScriptDir = path.dirname(pythonScriptPath);
         
         console.log('[v0] Python script path:', pythonScriptPath);
+        console.log('[v0] Python script dir:', pythonScriptDir);
         console.log('[v0] Input values:', inputValues);
         console.log('[v0] String args:', stringArgs);
         
+        // Verify Python script exists
+        const fs = require('fs');
+        if (!fs.existsSync(pythonScriptPath)) {
+            console.error('[v0] Python script not found at:', pythonScriptPath);
+            return res.status(500).json({
+                success: false,
+                error: `Python script not found at ${pythonScriptPath}`
+            });
+        }
+        
         // Try python3 first, then python as fallback
         let pythonProcess;
+        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+        
         try {
-            pythonProcess = spawn('python3', [pythonScriptPath, ...stringArgs], {
-                timeout: 30000
+            pythonProcess = spawn(pythonCmd, [pythonScriptPath, ...stringArgs], {
+                timeout: 30000,
+                cwd: pythonScriptDir
             });
         } catch (e) {
-            console.log('[v0] python3 failed, trying python');
-            pythonProcess = spawn('python', [pythonScriptPath, ...stringArgs], {
-                timeout: 30000
+            console.log('[v0] First Python command failed, trying alternative');
+            const fallbackCmd = pythonCmd === 'python3' ? 'python' : 'python3';
+            pythonProcess = spawn(fallbackCmd, [pythonScriptPath, ...stringArgs], {
+                timeout: 30000,
+                cwd: pythonScriptDir
             });
         }
         
@@ -117,12 +135,18 @@ router.post("/", async (req, res) => {
         }, 30000);
 
         pythonProcess.stdout.on('data', (data) => {
-            result += data.toString();
+            const chunk = data.toString();
+            result += chunk;
+            console.log('[v0] Stdout chunk received:', JSON.stringify(chunk));
         });
 
         pythonProcess.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-            console.log('[v0] Python stderr:', data.toString());
+            const chunk = data.toString();
+            errorOutput += chunk;
+            // Only log important errors, not TensorFlow warnings
+            if (!chunk.includes('tensorflow') && !chunk.includes('oneDNN')) {
+                console.log('[v0] Python stderr:', chunk);
+            }
         });
 
         pythonProcess.on('close', async (code) => {
@@ -148,29 +172,47 @@ router.post("/", async (req, res) => {
             }
             
             try {
-                // Parse prediction result
-                const predictionText = result.trim();
-                console.log('[v0] Prediction text to parse:', predictionText);
+                // Parse prediction result - remove TensorFlow warnings from stderr
+                let cleanResult = result.trim();
+                
+                // Filter out only TensorFlow log lines (keep actual error messages)
+                const resultLines = cleanResult.split('\n').filter(line => {
+                    const trimmed = line.trim();
+                    // Keep lines that are actual predictions
+                    if (trimmed.includes('Prediction:')) return true;
+                    // Skip TensorFlow info logs
+                    if (trimmed.startsWith('2026-04-19') && trimmed.includes('I tensorflow')) return false;
+                    // Skip other TensorFlow logs
+                    if (trimmed.includes('oneDNN') || trimmed.includes('cpu_feature_guard')) return false;
+                    return true;
+                });
+                
+                cleanResult = resultLines.join('\n').trim();
+                console.log('[v0] Cleaned prediction text:', JSON.stringify(cleanResult));
+                console.log('[v0] Full result was:', JSON.stringify(result));
                 
                 let prediction = 0;
                 let confidence = 0;
                 let riskLevel = 'Low';
 
                 // Parse output format: "Prediction: X, Confidence: Y%"
-                if (predictionText.includes('Prediction:')) {
-                    const predMatch = predictionText.match(/Prediction:\s*(\d+)/);
-                    const confMatch = predictionText.match(/Confidence:\s*([\d.]+)%?/);
-                    
-                    console.log('[v0] Pred match:', predMatch);
-                    console.log('[v0] Conf match:', confMatch);
-                    
-                    prediction = predMatch ? parseInt(predMatch[1]) : 0;
-                    confidence = confMatch ? parseFloat(confMatch[1]) : 0;
+                const predMatch = cleanResult.match(/Prediction:\s*(\d+)/);
+                const confMatch = cleanResult.match(/Confidence:\s*([\d.]+)%?/);
+                
+                console.log('[v0] Regex matches - Pred:', predMatch, 'Conf:', confMatch);
+                
+                if (predMatch && confMatch) {
+                    prediction = parseInt(predMatch[1]);
+                    confidence = parseFloat(confMatch[1]);
 
                     // Determine risk level
                     if (prediction === 1) {
                         riskLevel = confidence > 80 ? 'High' : confidence > 50 ? 'Medium' : 'Low';
                     }
+                    console.log('[v0] Successfully parsed - Prediction:', prediction, 'Confidence:', confidence);
+                } else {
+                    console.error('[v0] Failed to parse prediction from:', cleanResult);
+                    throw new Error('Could not parse prediction output: ' + cleanResult);
                 }
 
                 const responseData = { 

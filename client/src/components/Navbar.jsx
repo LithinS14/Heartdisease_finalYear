@@ -37,9 +37,6 @@
                 <Link to="/history" className="navbar-link" onClick={closeMobileMenu}>
                     History
                 </Link>
-                <Link to="/ocr" className="navbar-link" onClick={closeMobileMenu}>
-                    OCR
-                </Link>
                 <div className="navbar-user">
                     <span className="user-name">{user?.name || 'User'}</span>
                     <Link to="/profile" className="navbar-link profile-link" onClick={closeMobileMenu}>
